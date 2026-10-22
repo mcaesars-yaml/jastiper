@@ -125,6 +125,7 @@ main{max-width:600px;margin:0 auto;padding:4px 16px 96px}
 .row.lead-sm{--inset:56px}
 .row:not(:first-child)::before{content:"";position:absolute;top:0;right:0;left:var(--inset);height:1px;background:var(--hair)}
 button.row:active,.row-main:active{background:var(--s2)}
+button.row:disabled{opacity:.45}
 .row-main{flex:1;min-width:0;display:flex;flex-direction:column;align-self:stretch;justify-content:center;border-radius:8px;margin:-4px 0;padding:4px 0}
 .r-body{flex:1;min-width:0;display:flex;flex-direction:column}
 .r-title{font-size:15px;font-weight:550;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -418,7 +419,8 @@ const I = {
   info: svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 8v5M12 16.2v.1"/>'),
   sliders: svg('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
   moon: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
-  trash: svg('<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/>')
+  trash: svg('<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5"/>'),
+  sheet: svg('<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10"/>')
 };
 
 /* ---------- storage: IndexedDB (data + photos), localStorage mirror for data only ---------- */
@@ -781,6 +783,7 @@ function viewHome(t){
   body += `<div class="section-h"><h2 class="eyebrow">This trip</h2></div><div class="group">
     <button class="row lead-sm" data-act="openExpenses"><span class="ico amb">${I.wallet}</span><span class="r-body"><span class="r-title">Expenses</span><span class="r-meta">${s.exps.length ? s.exps.length+' entries' : 'Flights, hotel, baggage…'}</span></span><span class="r-trail"><span class="r-amt">${rp(s.expenses)}</span></span><span class="r-chev">${I.chevR}</span></button>
     <div class="row lead-sm"><span class="ico acc">${I.bag}</span><span class="r-body"><span class="r-title">Store spend</span><span class="r-meta">What you pay at the shops</span></span><span class="r-trail"><span class="r-amt">${rp(s.cost)}</span></span></div>
+    <button class="row lead-sm" data-act="exportExcel"><span class="ico grn">${I.sheet}</span><span class="r-body"><span class="r-title">Export to Excel</span><span class="r-meta">Orders, customers, payments, expenses</span></span><span class="r-chev">${I.chevR}</span></button>
     <button class="row lead-sm" data-act="editTrip" data-id="${t.id}"><span class="ico">${I.sliders}</span><span class="r-body"><span class="r-title">Trip settings</span><span class="r-meta">Fee ${tripFeeLabel(t)} · DP ${nf(t.dpPercent||50,1)}%</span></span><span class="r-chev">${I.chevR}</span></button>
   </div>`;
   if(!s.items.length) body += '<p class="note" style="text-align:center;margin-top:20px">Tap + to add your first order.</p>';
@@ -931,14 +934,15 @@ function viewMore(){
     <div class="row lead-sm" style="flex-wrap:wrap"><span class="ico">${I.moon}</span><span class="r-body"><span class="r-title" id="theme-lbl">Appearance</span></span>
       <div style="flex-basis:100%;padding:4px 0 4px 48px;margin:0" class="field"><label class="vh">Theme</label>${seg('theme',[['system','Automatic'],['light','Light'],['dark','Dark']],S.theme)}</div></div>
   </div>`;
-  body += `<div class="section-h"><h2 class="eyebrow">Backup</h2></div><div class="group">
+  body += `<div class="section-h"><h2 class="eyebrow">Backup &amp; export</h2></div><div class="group">
+    <button class="row lead-sm" data-act="exportExcel" ${db.trips.length?'':'disabled'}><span class="ico grn">${I.sheet}</span><span class="r-body"><span class="r-title">Export to Excel</span><span class="r-meta">.xlsx for Excel, Google Sheets or Numbers</span></span><span class="r-chev">${I.chevR}</span></button>
     <button class="row lead-sm" data-act="download"><span class="ico acc">${I.download}</span><span class="r-body"><span class="r-title">Download backup</span><span class="r-meta">Last backup ${ago(S.lastBackup)}</span></span></button>
     <button class="row lead-sm" data-act="restore"><span class="ico">${I.upload}</span><span class="r-body"><span class="r-title">Restore from file</span><span class="r-meta">Replaces the data on this phone</span></span></button>
   </div><p class="note">Data and photos live only on this phone. Keep backup files somewhere safe, like Google Drive.</p>`;
   body += `<div class="section-h"><h2 class="eyebrow">Data</h2></div><div class="group">
     <div class="row"><span class="r-body"><span class="r-title">${db.customers.length} customers · ${db.items.length} orders</span><span class="r-meta">${db.trips.length} trips · ${db.catalog.length} listed items · ${db.payments.length} payments</span></span></div>
     <button class="row" data-act="reset"><span class="r-body"><span class="r-title red">Erase all data</span></span></button></div>
-    <p class="note" style="text-align:center;margin-top:24px">Jastip Book 4.0</p>`;
+    <p class="note" style="text-align:center;margin-top:24px">Jastip Book 4.1</p>`;
   return [head, body];
 }
 
@@ -1244,6 +1248,172 @@ function restoreFrom(file){
   r.readAsText(file);
 }
 
+/* ---------- Excel export ----------
+   Writes a real .xlsx (Office Open XML in a zip) by hand: works offline, no library, and lets us
+   style it properly — bold frozen header, filters, Rupiah/date number formats, SUM totals. */
+const XL = (() => {
+  const crcT = new Uint32Array(256).map((_,n)=>{ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; return c>>>0; });
+  const crc32 = b => { let c = 0xFFFFFFFF; for(let i=0;i<b.length;i++) c = crcT[(c^b[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; };
+  // Minimal zip writer (method 0 = stored). Files: [{name, data:string}]
+  function zip(files){
+    const enc = new TextEncoder(), parts = [], central = []; let off = 0;
+    const d = new Date(), dt = ((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate(), tm = (d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+    for(const f of files){
+      const name = enc.encode(f.name), data = enc.encode(f.data), crc = crc32(data);
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(10,tm,true); lh.setUint16(12,dt,true);
+      lh.setUint32(14,crc,true); lh.setUint32(18,data.length,true); lh.setUint32(22,data.length,true); lh.setUint16(26,name.length,true);
+      parts.push(lh, name, data);
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(12,tm,true); ch.setUint16(14,dt,true);
+      ch.setUint32(16,crc,true); ch.setUint32(20,data.length,true); ch.setUint32(24,data.length,true); ch.setUint16(28,name.length,true); ch.setUint32(42,off,true);
+      central.push(ch, name);
+      off += 30 + name.length + data.length;
+    }
+    const cdSize = central.reduce((s,p)=>s+p.byteLength,0), end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0,0x06054b50,true); end.setUint16(8,files.length,true); end.setUint16(10,files.length,true); end.setUint32(12,cdSize,true); end.setUint32(16,off,true);
+    return new Blob([...parts, ...central, end], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  }
+  const x = s => String(s ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const colName = i => { let s=''; i++; while(i){ const m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=Math.floor((i-1)/26); } return s; };
+  const serial = iso => { const [y,m,d] = String(iso).split('-').map(Number); return (Date.UTC(y,m-1,d) - Date.UTC(1899,11,30)) / 864e5; };
+  // style ids → cellXfs below
+  const S = {head:1, s:2, rp:3, int:4, fx0:5, fx2:6, date:7, rate:8, totL:9, totRp:10, totInt:11, title:12};
+  const NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  function cell(ref, v, t){
+    if(v === '' || v == null || (typeof v === 'number' && !isFinite(v))) return '';
+    if(t === 'date'){ if(!/^\d{4}-\d{2}-\d{2}$/.test(v)) return ''; return `<c r="${ref}" s="${S.date}"><v>${serial(v)}</v></c>`; }
+    if(t === 's' || t === 'title' || typeof v !== 'number') return `<c r="${ref}" s="${S[t]||S.s}" t="inlineStr"><is><t xml:space="preserve">${x(v)}</t></is></c>`;
+    return `<c r="${ref}" s="${S[t]}"><v>${v}</v></c>`;
+  }
+  // sheet: {name, cols:[{h, w, t, sum}], rows:[[...]]}. A cell may be [value, type] to override the column type.
+  function sheetXML(sh){
+    const n = sh.rows.length, last = colName(sh.cols.length-1);
+    let rows = `<row r="1" ht="22" customHeight="1">` + sh.cols.map((c,i)=>`<c r="${colName(i)}1" s="${S.head}" t="inlineStr"><is><t>${x(c.h)}</t></is></c>`).join('') + '</row>';
+    sh.rows.forEach((r,ri)=>{
+      rows += `<row r="${ri+2}">` + r.map((v,ci)=>{ const [val,t] = Array.isArray(v) ? v : [v, sh.cols[ci].t]; return cell(colName(ci)+(ri+2), val, t); }).join('') + '</row>';
+    });
+    if(n && sh.cols.some(c=>c.sum)){
+      const tr = n + 2;
+      rows += `<row r="${tr}">` + sh.cols.map((c,i)=>{
+        const ref = colName(i)+tr;
+        if(i===0) return `<c r="${ref}" s="${S.totL}" t="inlineStr"><is><t>Total</t></is></c>`;
+        if(!c.sum) return `<c r="${ref}" s="${S.totL}"/>`;
+        const total = sh.rows.reduce((a,r)=>{ const v = Array.isArray(r[i]) ? r[i][0] : r[i]; return a + (typeof v==='number' ? v : 0); }, 0);
+        return `<c r="${ref}" s="${c.t==='rp'?S.totRp:S.totInt}"><f>SUM(${colName(i)}2:${colName(i)}${n+1})</f><v>${total}</v></c>`;
+      }).join('') + '</row>';
+    }
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet ${NS}><dimension ref="A1:${last}${Math.max(1,n+1+(n&&sh.cols.some(c=>c.sum)?1:0))}"/>` +
+      `<sheetViews><sheetView workbookViewId="0"${sh.tab?' tabSelected="1"':''}><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>` +
+      `<sheetFormatPr defaultRowHeight="16"/><cols>` + sh.cols.map((c,i)=>`<col min="${i+1}" max="${i+1}" width="${c.w||14}" customWidth="1"/>`).join('') + `</cols>` +
+      `<sheetData>${rows}</sheetData>` + (n ? `<autoFilter ref="A1:${last}${n+1}"/>` : '') +
+      `<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+  }
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<numFmts count="4"><numFmt numFmtId="164" formatCode="&quot;Rp&quot;\\ #,##0;[Red]\\-&quot;Rp&quot;\\ #,##0"/><numFmt numFmtId="165" formatCode="#,##0.00"/><numFmt numFmtId="166" formatCode="d\\ mmm\\ yyyy"/><numFmt numFmtId="167" formatCode="#,##0.00##"/></numFmts>` +
+    `<fonts count="3"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="14"/><name val="Calibri"/><family val="2"/></font></fonts>` +
+    `<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEEEDFB"/><bgColor indexed="64"/></patternFill></fill></fills>` +
+    `<borders count="3"><border><left/><right/><top/><bottom/><diagonal/></border><border><left/><right/><top/><bottom style="thin"><color rgb="FF8A8A90"/></bottom><diagonal/></border><border><left/><right/><top style="thin"><color rgb="FF8A8A90"/></top><bottom/><diagonal/></border></borders>` +
+    `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="13">` +
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+    `<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>` +
+    `<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>` +
+    `<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+    `<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+    `<xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+    `<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+    `<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="left"/></xf>` +
+    `<xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>` +
+    `<xf numFmtId="0" fontId="1" fillId="0" borderId="2" xfId="0" applyFont="1" applyBorder="1"/>` +
+    `<xf numFmtId="164" fontId="1" fillId="0" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>` +
+    `<xf numFmtId="3" fontId="1" fillId="0" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>` +
+    `<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>` +
+    `</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  function book(sheets){
+    const files = [];
+    files.push({name:'[Content_Types].xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+      sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') +
+      `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`});
+    files.push({name:'_rels/.rels', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>`});
+    const now = new Date().toISOString().replace(/\.\d+Z$/,'Z');
+    files.push({name:'docProps/core.xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Jastip Book export</dc:title><dc:creator>Jastip Book</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`});
+    files.push({name:'docProps/app.xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Jastip Book</Application></Properties>`});
+    files.push({name:'xl/workbook.xml', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook ${NS}><bookViews><workbookView activeTab="0"/></bookViews><sheets>` +
+      sheets.map((s,i)=>`<sheet name="${x(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('') + `</sheets><definedNames>` +
+      sheets.map((s,i)=>s.rows.length?`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${x(s.name)}'!$A$1:$${colName(s.cols.length-1)}$${s.rows.length+1}</definedName>`:'').join('') + `</definedNames></workbook>`});
+    files.push({name:'xl/_rels/workbook.xml.rels', data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('') +
+      `<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
+    files.push({name:'xl/styles.xml', data:styles});
+    sheets.forEach((s,i)=>files.push({name:`xl/worksheets/sheet${i+1}.xml`, data:sheetXML(Object.assign({tab:i===0}, s))}));
+    return zip(files);
+  }
+  return {book};
+})();
+
+// Builds the workbook for one trip or all trips. Amounts mirror the app exactly (sold-out items excluded).
+function buildExport(scope){
+  const t0 = activeTrip(), trips = scope==='all' ? [...db.trips] : [t0];
+  const fxT = cur => (CUR[cur]||[0,2])[1] ? 'fx2' : 'fx0';
+  const R = n => Math.round(n);
+  const summary = [], orders = [], customers = [], payments = [], expenses = [];
+  const payLabel = {dp:'DP', payment:'Payment', refund:'Refund'};
+  const custLabel = {paid:'Paid', dp:'DP paid', unpaid:'Unpaid', refund:'Refund owed', none:''};
+  trips.forEach(t=>{
+    const s = tripSummary(t);
+    summary.push([t.name, country(t).name, t.currency, [num(t.rate),'rate'], t.start||'', t.end||'', s.items.length, s.active.length,
+      R(s.total), R(s.cost), R(s.profit), R(s.expenses), R(s.net), R(s.paid), R(s.outstanding), R(s.refunds)]);
+    s.items.map(i=>({i, c:cust(i.customerId)||{name:'?',phone:''}})).sort((a,b)=>a.c.name.localeCompare(b.c.name)||ORDER[a.i.status]-ORDER[b.i.status]).forEach(({i,c})=>{
+      const k = itemCalc(i,t), un = i.status==='unavailable', disc = num(i.discPrice)>0 && num(i.discPrice)!==num(i.price);
+      orders.push([t.name, c.name, i.name, i.store||'', k.qty, t.currency, [num(i.price),fxT(t.currency)], disc?[num(i.discPrice),fxT(t.currency)]:'',
+        disc ? (i.basis==='discount'?'Discount price':'Original price') : 'Original price',
+        un?'':R(k.cost), un?'':R(k.fee), un?'':R(k.total), un?'':R(k.profit),
+        i.pay==='dp' ? 'DP '+nf(t.dpPercent||50,1)+'%' : 'Full', (STATUS[i.status]||STATUS.requested)[0], k.weight||'', i.note||'']);
+    });
+    s.custs.slice().sort((a,b)=>a.c.name.localeCompare(b.c.name)).forEach(x=>{
+      customers.push([t.name, x.c.name, x.c.phone||'', x.items.filter(i=>i.status!=='unavailable').length, R(x.total), R(x.upfront), R(x.paid), R(x.balance), custLabel[x.status]||'']);
+    });
+    db.payments.filter(p=>p.tripId===t.id).sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(p=>{
+      payments.push([t.name, p.date||'', (cust(p.customerId)||{name:'?'}).name, payLabel[p.type]||p.type, R((p.type==='refund'?-1:1)*num(p.amount)), p.note||'', p.photoId?'Yes':'No']);
+    });
+    s.exps.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(e=>expenses.push([t.name, e.date||'', e.label, R(num(e.amount))]));
+  });
+  const countries = new Set(trips.map(t=>t.country));
+  const list = db.catalog.filter(c=>scope==='all' || countries.has(c.country)).sort((a,b)=>(a.country+a.category+a.name).localeCompare(b.country+b.category+b.name))
+    .map(c=>[country(c.country).name, c.category||'', c.name, c.brand||'', c.store||'', c.cur, [num(c.price),fxT(c.cur)], num(c.discPrice)>0?[num(c.discPrice),fxT(c.cur)]:'', num(c.weight)||'', c.note||'']);
+  return [
+    {name:'Summary', rows:summary, cols:[{h:'Trip',w:22,t:'s'},{h:'Country',w:14,t:'s'},{h:'Currency',w:10,t:'s'},{h:'Rate (Rp per 1)',w:14,t:'rate'},{h:'Start',w:13,t:'date'},{h:'End',w:13,t:'date'},
+      {h:'Orders',w:9,t:'int',sum:1},{h:'Active orders',w:13,t:'int',sum:1},{h:'Sales',w:16,t:'rp',sum:1},{h:'Store cost',w:16,t:'rp',sum:1},{h:'Order profit',w:16,t:'rp',sum:1},
+      {h:'Expenses',w:15,t:'rp',sum:1},{h:'Net profit',w:16,t:'rp',sum:1},{h:'Received',w:16,t:'rp',sum:1},{h:'To collect',w:16,t:'rp',sum:1},{h:'Refunds owed',w:15,t:'rp',sum:1}]},
+    {name:'Orders', rows:orders, cols:[{h:'Trip',w:20,t:'s'},{h:'Customer',w:20,t:'s'},{h:'Item',w:32,t:'s'},{h:'Store',w:26,t:'s'},{h:'Qty',w:6,t:'int',sum:1},{h:'Currency',w:10,t:'s'},
+      {h:'Original price / pc',w:17,t:'fx0'},{h:'Discount price / pc',w:17,t:'fx0'},{h:'Charged on',w:15,t:'s'},{h:'Store cost',w:15,t:'rp',sum:1},{h:'Fee',w:13,t:'rp',sum:1},
+      {h:'Customer pays',w:16,t:'rp',sum:1},{h:'Profit',w:14,t:'rp',sum:1},{h:'Payment',w:10,t:'s'},{h:'Status',w:12,t:'s'},{h:'Weight (g)',w:11,t:'int',sum:1},{h:'Note',w:28,t:'s'}]},
+    {name:'Customers', rows:customers, cols:[{h:'Trip',w:20,t:'s'},{h:'Customer',w:22,t:'s'},{h:'WhatsApp',w:16,t:'s'},{h:'Items',w:8,t:'int',sum:1},{h:'Total',w:16,t:'rp',sum:1},
+      {h:'Upfront due',w:16,t:'rp',sum:1},{h:'Paid',w:16,t:'rp',sum:1},{h:'Balance (– = refund)',w:19,t:'rp',sum:1},{h:'Status',w:13,t:'s'}]},
+    {name:'Payments', rows:payments, cols:[{h:'Trip',w:20,t:'s'},{h:'Date',w:13,t:'date'},{h:'Customer',w:22,t:'s'},{h:'Type',w:10,t:'s'},{h:'Amount (– = refund)',w:19,t:'rp',sum:1},{h:'Note',w:20,t:'s'},{h:'Proof attached',w:14,t:'s'}]},
+    {name:'Expenses', rows:expenses, cols:[{h:'Trip',w:20,t:'s'},{h:'Date',w:13,t:'date'},{h:'Description',w:32,t:'s'},{h:'Amount',w:16,t:'rp',sum:1}]},
+    {name:'Item list', rows:list, cols:[{h:'Country',w:14,t:'s'},{h:'Category',w:14,t:'s'},{h:'Item',w:32,t:'s'},{h:'Brand',w:18,t:'s'},{h:'Store',w:26,t:'s'},{h:'Currency',w:10,t:'s'},
+      {h:'Original price',w:15,t:'fx0'},{h:'Discount price',w:15,t:'fx0'},{h:'Weight (g)',w:11,t:'int'},{h:'Note',w:28,t:'s'}]}
+  ];
+}
+function exportExcel(scope){
+  const t = activeTrip(), sheets = buildExport(scope);
+  const slug = (scope==='all' ? 'all-trips' : t.name).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  downloadFile(new File([XL.book(sheets)], `jastip-${slug}-${today()}.xlsx`, {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+}
+function exportSheet(){
+  const t = activeTrip(); if(!t) return toast('Create a trip first');
+  openSheet('Export to Excel', `<form id="sf" data-form="export">
+    <div class="field"><label>Include</label>${seg('scope',[['trip',esc(t.name)],['all','All trips']],'trip')}</div>
+    <div class="group" style="margin:6px 0 12px">
+      ${[['Summary','Sales, costs, expenses and net profit per trip'],['Orders','Every order with prices, fee, profit and status'],['Customers','What each customer owes and has paid'],
+         ['Payments','DPs, payments and refunds by date'],['Expenses','Trip costs'],['Item list','Your saved products and prices']]
+        .map(([h,d])=>`<div class="row" style="min-height:48px"><span class="r-body"><span class="r-title" style="font-size:14px">${h}</span><span class="r-meta">${d}</span></span></div>`).join('')}
+    </div>
+    <p class="formnote">Opens in Excel, Google Sheets and Numbers. Amounts are real numbers in Rupiah, so totals and filters work.</p>
+    </form>`, {submit:'Export'});
+}
+
 /* ---------- sample ---------- */
 function loadSample(){
   const t = {id:uid(),name:'Seoul Nov 2026',country:'KR',currency:'KRW',rate:11.6,feeType:'percent',feeValue:10,dpPercent:50,round:1000,
@@ -1285,6 +1455,7 @@ const ACT = {
   editDefaults: () => defaultsForm(),
   editBill: () => billForm(),
   openExpenses: () => expensesSheet(),
+  exportExcel: () => exportSheet(),
   fillExpense: el => { const f = el.closest('form'); f.label.value = el.dataset.v; f.amount.focus(); },
   delExpense: el => { db.expenses = db.expenses.filter(e=>e.id!==el.dataset.id); save(); render(); expensesSheet(); toast('Expense removed'); },
   sample: () => loadSample(),
@@ -1418,6 +1589,10 @@ const FORMS = {
     const id = f.dataset.id;
     if(id) Object.assign(cust(id), data); else db.customers.push(Object.assign({id:uid(), created:Date.now()}, data));
     save(); toast('Customer saved');
+  },
+  export(fd){
+    try{ exportExcel(fd.get('scope')||'trip'); toast('Excel file downloaded', 3500); }
+    catch(err){ toast('Export failed: '+(err && err.message || err), 6000); return false; }
   },
   settings(fd){ db.settings.sellerName = fd.get('sellerName').trim(); db.settings.billFooter = fd.get('billFooter').trim(); save(); toast('Bill settings saved'); },
   defaults(fd){

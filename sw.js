@@ -1,5 +1,5 @@
 // Offline cache: serve from cache, refresh in the background.
-const CACHE = 'jastip-v4';
+const CACHE = 'jastip-v5';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
